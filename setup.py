@@ -28,6 +28,7 @@ setup(
         'console_scripts': [
                 'offboard_control = px4_offboard.offboard_control:main',
                 'visualizer = px4_offboard.visualizer:main',
+                'stream_mocap = px4_offboard.stream_mocap:main',
         ],
     },
 )
