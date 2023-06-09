@@ -49,7 +49,9 @@ from px4_msgs.msg import VehicleStatus
 class OffboardControl(Node):
 
     def __init__(self):
-        super().__init__('minimal_publisher')
+
+        super().__init__()
+
         qos_profile = QoSProfile(
             reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
             durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
@@ -62,16 +64,41 @@ class OffboardControl(Node):
             '/fmu/out/vehicle_status',
             self.vehicle_status_callback,
             qos_profile)
-        self.publisher_offboard_mode = self.create_publisher(OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile)
-        self.publisher_trajectory = self.create_publisher(TrajectorySetpoint, '/fmu/in/trajectory_setpoint', qos_profile)
+
+        # offboard script for checking the mocap
+        self.local_pos_sub = self.create_sbuscription(
+            VehicleLocalPosition,
+            'fmu/out/vehicle_local_position',
+            self.local_position_callback,
+            qos_profile)
+        # ------------------------------------------
+
+        self.publisher_offboard_mode = self.create_publisher(
+            OffboardControlMode, 
+            '/fmu/in/offboard_control_mode', 
+            qos_profile)
+
+        self.publisher_trajectory = self.create_publisher(
+            TrajectorySetpoint, 
+            '/fmu/in/trajectory_setpoint', 
+            qos_profile)
+
         timer_period = 0.02  # seconds
         self.timer = self.create_timer(timer_period, self.cmdloop_callback)
 
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
         self.dt = timer_period
-        self.theta = 0.0
-        self.radius = 10.0
-        self.omega = 0.5
+        # self.theta = 0.0
+        # self.radius = 10.0
+        # self.omega = 0.5
+
+        self.square = np.array([[3.0,0.0,-2.0],
+                               [3.0,-6.0,-2.0],
+                               [-3.0,-6.0,-2.0],
+                               [-3.0,0.0,-2.0]],dtype=np.float32)
+
+        self.pt_idx = np.uint8(0)
+        self.nav_wpt_reach_rad_ =   np.float32(0.1)
  
     def vehicle_status_callback(self, msg):
         # TODO: handle NED->ENU transformation
@@ -79,24 +106,51 @@ class OffboardControl(Node):
         print("  - offboard status: ", VehicleStatus.NAVIGATION_STATE_OFFBOARD)
         self.nav_state = msg.nav_state
 
+    # offboard script for checking the mocap
+    def local_position_callback(self, msg):
+        self.local_pos_ned_     =   np.array([msg.x,msg.y,msg.z],dtype=np.float32)
+        self.local_vel_ned_     =   np.array([msg.vx,msg.vy,msg.vz],dtype=np.float32)
+    # ------------------------------------------
+
     def cmdloop_callback(self):
+
         # Publish offboard control modes
         offboard_msg = OffboardControlMode()
         offboard_msg.timestamp = int(Clock().now().nanoseconds / 1000)
-        offboard_msg.position=True
-        offboard_msg.velocity=False
-        offboard_msg.acceleration=False
+        offboard_msg.position = True
+        offboard_msg.velocity = False
+        offboard_msg.acceleration = False
         self.publisher_offboard_mode.publish(offboard_msg)
+
+        # publish offboard position cmd
         if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
 
             trajectory_msg = TrajectorySetpoint()
-            trajectory_msg.position[0] = self.radius * np.cos(self.theta)
-            trajectory_msg.position[1] = self.radius * np.sin(self.theta)
-            trajectory_msg.position[2] = -5.0
+
+            trajectory_msg.position[0] = self.square[pt_idx][0]
+            trajectory_msg.position[1] = self.square[pt_idx][1]
+            trajectory_msg.position[2] = self.square[pt_idx][2]
             self.publisher_trajectory.publish(trajectory_msg)
 
-            self.theta = self.theta + self.omega * self.dt
+            dist_xyz    =   numpy.sqrt(numpy.power(trajectory_msg.position[0]-self.local_pos_ned_[0],2)+ \
+                                       numpy.power(trajectory_msg.position[1]-self.local_pos_ned_[1],2)+ \
+                                       numpy.power(trajectory_msg.position[2]-self.local_pos_ned_[2],2))
 
+            if (pt_idx <= 2) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                pt_idx = pt_idx+1
+
+            elif (pt_idx == 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                pt_idx = 0
+
+        # if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+
+        #     trajectory_msg = TrajectorySetpoint()
+        #     trajectory_msg.position[0] = self.radius * np.cos(self.theta)
+        #     trajectory_msg.position[1] = self.radius * np.sin(self.theta)
+        #     trajectory_msg.position[2] = -5.0
+        #     self.publisher_trajectory.publish(trajectory_msg)
+
+        #     self.theta = self.theta + self.omega * self.dt
 
 def main(args=None):
     rclpy.init(args=args)

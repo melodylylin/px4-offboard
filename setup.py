@@ -27,6 +27,7 @@ setup(
     entry_points={
         'console_scripts': [
                 'offboard_control = px4_offboard.offboard_control:main',
+                'offboard_mission = px4_offboard.offboard_mission:main',
                 'visualizer = px4_offboard.visualizer:main',
                 'stream_mocap = px4_offboard.stream_mocap:main',
         ],
