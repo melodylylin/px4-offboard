@@ -43,19 +43,19 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDur
 
 from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import TrajectorySetpoint
-from px4_msgs.msg import VehicleStatus
+from px4_msgs.msg import VehicleStatus, VehicleLocalPosition, VehicleCommand
 
 
 class OffboardControl(Node):
 
     def __init__(self):
 
-        super().__init__()
+        super().__init__("px4_offboard")
 
         qos_profile = QoSProfile(
-            reliability=QoSReliabilityPolicy.RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
-            durability=QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL,
-            history=QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
             depth=1
         )
 
@@ -66,7 +66,7 @@ class OffboardControl(Node):
             qos_profile)
 
         # offboard script for checking the mocap
-        self.local_pos_sub = self.create_sbuscription(
+        self.local_pos_sub = self.create_subscription(
             VehicleLocalPosition,
             'fmu/out/vehicle_local_position',
             self.local_position_callback,
@@ -85,6 +85,8 @@ class OffboardControl(Node):
 
         timer_period = 0.02  # seconds
         self.timer = self.create_timer(timer_period, self.cmdloop_callback)
+        
+        self.counter = 0
 
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
         self.dt = timer_period
@@ -99,7 +101,12 @@ class OffboardControl(Node):
 
         self.pt_idx = np.uint8(0)
         self.nav_wpt_reach_rad_ =   np.float32(0.1)
- 
+
+        self.vehicle_command_publisher_ = self.create_publisher(VehicleCommand, f"/fmu/in/vehicle_command", qos_profile) 
+
+        self.local_pos_ned_ = None
+        self.local_vel_ned_ = None
+
     def vehicle_status_callback(self, msg):
         # TODO: handle NED->ENU transformation
         print("NAV_STATUS: ", msg.nav_state)
@@ -113,7 +120,12 @@ class OffboardControl(Node):
     # ------------------------------------------
 
     def cmdloop_callback(self):
-
+        self.counter += 1
+        if self.counter == 10:
+            self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1., 6.)
+            self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0)
+            self.get_logger().info("Armed and dangerous....")
+        
         # Publish offboard control modes
         offboard_msg = OffboardControlMode()
         offboard_msg.timestamp = int(Clock().now().nanoseconds / 1000)
@@ -127,20 +139,20 @@ class OffboardControl(Node):
 
             trajectory_msg = TrajectorySetpoint()
 
-            trajectory_msg.position[0] = self.square[pt_idx][0]
-            trajectory_msg.position[1] = self.square[pt_idx][1]
-            trajectory_msg.position[2] = self.square[pt_idx][2]
+            trajectory_msg.position[0] = self.square[self.pt_idx][0]
+            trajectory_msg.position[1] = self.square[self.pt_idx][1]
+            trajectory_msg.position[2] = self.square[self.pt_idx][2]
             self.publisher_trajectory.publish(trajectory_msg)
+            if self.local_pos_ned_ is not None and self.local_vel_ned_ is not None:
+                dist_xyz    =   np.sqrt(np.power(trajectory_msg.position[0]-self.local_pos_ned_[0],2)+ \
+                                        np.power(trajectory_msg.position[1]-self.local_pos_ned_[1],2)+ \
+                                        np.power(trajectory_msg.position[2]-self.local_pos_ned_[2],2))
 
-            dist_xyz    =   numpy.sqrt(numpy.power(trajectory_msg.position[0]-self.local_pos_ned_[0],2)+ \
-                                       numpy.power(trajectory_msg.position[1]-self.local_pos_ned_[1],2)+ \
-                                       numpy.power(trajectory_msg.position[2]-self.local_pos_ned_[2],2))
+                if (self.pt_idx <= 2) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    self.pt_idx = self.pt_idx+1
 
-            if (pt_idx <= 2) and (dist_xyz <= self.nav_wpt_reach_rad_):
-                pt_idx = pt_idx+1
-
-            elif (pt_idx == 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
-                pt_idx = 0
+                elif (self.pt_idx == 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    self.pt_idx = 0
 
         # if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
 
@@ -151,6 +163,25 @@ class OffboardControl(Node):
         #     self.publisher_trajectory.publish(trajectory_msg)
 
         #     self.theta = self.theta + self.omega * self.dt
+
+    '''
+    Publish vehicle commands
+        command   Command code (matches VehicleCommand and MAVLink MAV_CMD codes)
+        param1    Command parameter 1 as defined by MAVLink uint16 VEHICLE_CMD enum
+        param2    Command parameter 2 as defined by MAVLink uint16 VEHICLE_CMD enum
+    '''
+    def publish_vehicle_command(self, command, param1=0.0, param2=0.0):
+        msg = VehicleCommand()
+        msg.param1 = param1
+        msg.param2 = param2
+        msg.command = command  # command ID
+        msg.target_system = 0  # system which should execute the command
+        msg.target_component = 1  # component which should execute the command, 0 for all components
+        msg.source_system = 1  # system sending the command
+        msg.source_component = 1  # component sending the command
+        msg.from_external = True
+        msg.timestamp = int(Clock().now().nanoseconds / 1000) # time in microseconds
+        self.vehicle_command_publisher_.publish(msg)
 
 def main(args=None):
     rclpy.init(args=args)

@@ -47,20 +47,22 @@ def generate_launch_description():
         Node(
             package='px4_offboard',
             namespace='px4_offboard',
-            executable='visualizer',
-            name='visualizer'
-        ),
-        Node(
-            package='px4_offboard',
-            namespace='px4_offboard',
             executable='offboard_control',
-            name='control'
+            name='control',
         ),
+
+        # Node(
+        #     package='px4_offboard',
+        #     namespace='px4_offboard',
+        #     executable='visualizer',
+        #     name='visualizer'
+        # ),
+        
         Node(
             package='rviz2',
             namespace='',
             executable='rviz2',
             name='rviz2',
             arguments=['-d', [os.path.join(package_dir, 'visualize.rviz')]]
-        )
+        ),
     ])
