@@ -41,12 +41,12 @@ from rclpy.node import Node
 from rclpy.clock import Clock
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 
-from geometry_msgs.msg import Vector3Stamped
+from geometry_msgs.msg import PointStamped
 from std_msgs.msg import UInt8, Bool
 
 from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import TrajectorySetpoint
-from px4_msgs.msg import VehicleStatus, VehicleLocalPosition
+from px4_msgs.msg import VehicleStatus, VehicleLocalPosition, VehicleCommand
 
 
 class OffboardMission(Node):
@@ -69,12 +69,16 @@ class OffboardMission(Node):
             qos_profile)
 
         # offboard script for verifying the detector
-        self.local_pos_sub = self.create_sbuscription(
+        self.local_pos_sub = self.create_subscription(
             VehicleLocalPosition,
             'fmu/out/vehicle_local_position',
             self.local_position_callback,
             qos_profile)
-        # ------------------------------------------
+        # ------------------------------------------''
+
+        # delete experiment
+        self.vehicle_command_publisher_ = self.create_publisher(VehicleCommand, f"/fmu/in/vehicle_command", qos_profile) 
+        ###############################
 
         self.publisher_offboard_mode = self.create_publisher(
             OffboardControlMode, 
@@ -87,31 +91,31 @@ class OffboardMission(Node):
             qos_profile)
 
         self.detector_1 = self.create_publisher(
-            Vector3Stamped,
+            PointStamped,
             '/detector/atck_act_states',
             qos_profile
         )
 
         self.detector_2 = self.create_publisher(
-            Vector3Stamped,
+            PointStamped,
             '/detector/atck_est_states',
             qos_profile
         )
 
         self.detector_3 = self.create_publisher(
-            Vector3Stamped,
+            PointStamped,
             '/detector/past_setpoint',
             qos_profile
         )
 
         self.detector_4 = self.create_publisher(
-            Vector3Stamped,
+            PointStamped,
             '/detector/true_setpoint',
             qos_profile
         )
 
         self.detector_5 = self.create_publisher(
-            Vector3Stamped,
+            PointStamped,
             '/detector/atck_setpoint',
             qos_profile
         )
@@ -146,15 +150,15 @@ class OffboardMission(Node):
         self.flight_phase_      =   np.uint8(1)
         self.entry_execute_     =   np.uint8(1)
 
-        self.past_setpoint_     =   np.array([0.0,0.0,0.0],dtype=np.float32)
-        self.true_setpoint_     =   np.array([0.0,0.0,0.0],dtype=np.float32)
-        self.atck_setpoint_     =   np.array([0.0,0.0,0.0],dtype=np.float32)
+        self.past_setpoint_     =   np.array([0.0,0.0,0.0],dtype=float)
+        self.true_setpoint_     =   np.array([0.0,0.0,0.0],dtype=float)
+        self.atck_setpoint_     =   np.array([0.0,0.0,0.0],dtype=float)
 
         self.atck_engage_       =   False
         self.atck_detect_       =   True
 
-        self.atck_act_states_   =   np.array([0.0,0.0,0.0],dtype=np.float32)
-        self.atck_est_states_   =   np.array([0.0,0.0,0.0],dtype=np.float32)
+        self.atck_act_states_   =   np.array([0.0,0.0,0.0],dtype=float)
+        self.atck_est_states_   =   np.array([0.0,0.0,0.0],dtype=float)
 
         # waypoint reach condition radius
         self.nav_wpt_reach_rad_ =   np.float32(0.1)
@@ -198,9 +202,9 @@ class OffboardMission(Node):
         self.vehicle_command_publisher_.publish(msg)
 
     def cmdloop_callback(self):
-
+        self.counter += 1
         # disable when doing an experiment
-        if self.counter == 10:
+        if self.counter >= 10 and self.counter <= 20:
             self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE,1.0,6.0)
             self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,1.0)
             self.get_logger().info("Armed and dangerous....")
@@ -227,11 +231,17 @@ class OffboardMission(Node):
                 trajectory_msg.position[0]  =   np.float32(0.0)
                 trajectory_msg.position[1]  =   np.float32(0.0)
                 trajectory_msg.position[2]  =   np.float32(-2.0)
-                trajectory_msg.yaw          =   0
+                trajectory_msg.yaw          =   0.0
 
-            # during:
-            print("Current Mode: Offboard (Position hold at a starting point)")
-            self.publisher_trajectory.publish(trajectory_msg)
+            else:
+                # during:
+                trajectory_msg = TrajectorySetpoint()
+                trajectory_msg.position[0]  =   np.float32(0.0)
+                trajectory_msg.position[1]  =   np.float32(0.0)
+                trajectory_msg.position[2]  =   np.float32(-2.0)
+                trajectory_msg.yaw          =   0.0
+                print("Current Mode: Offboard (Position hold at a starting point)")
+                self.publisher_trajectory.publish(trajectory_msg)
 
             # transition
             if (self.local_pos_ned_ is not None) and (self.local_vel_ned_ is not None):
@@ -255,7 +265,7 @@ class OffboardMission(Node):
 
                 self.entry_execute_ 	    = 	0
 
-                self.past_setpoint_         =   [trajectory_msg.position[0],trajectory_msg.position[1],trajectory_msg.position[2]]
+                self.past_setpoint_         =   np.array([0.0,0.0,-2.0],dtype=np.float32)
                 self.true_setpoint_         =   np.add(self.past_setpoint_,np.array([0.0,-6.0,0.0],dtype=np.float32))
                 self.atck_setpoint_         =   np.add(self.past_setpoint_,np.array([3.0,-6.0,0.0],dtype=np.float32))
                 self.atck_engage_           =   True
@@ -306,40 +316,51 @@ class OffboardMission(Node):
         else:
             self.flight_phase_     =	1
             self.entry_execute_    =	1
+        
+        stamp = self.get_clock().now().to_msg()
 
-        atck_act_states_pub = Vector3Stamped()
-        atck_act_states_pub.x = self.atck_act_states_[0]
-        atck_act_states_pub.y = self.atck_act_states_[1]
-        atck_act_states_pub.z = self.atck_act_states_[2]
-        atck_act_states_pub.timestamp = int(Clock().now().nanoseconds/1000)
+        atck_act_states_pub = PointStamped()
+        atck_act_states_pub.point.x = self.atck_act_states_[0]
+        atck_act_states_pub.point.y = self.atck_act_states_[1]
+        atck_act_states_pub.point.z = self.atck_act_states_[2]
+        atck_act_states_pub.header.stamp = stamp
+
+        # atck_act_states_pub.timestamp = int(Clock().now().nanoseconds/1000)
         self.detector_1.publish(atck_act_states_pub)
 
-        atck_est_states_pub = Vector3Stamped()
-        atck_est_states_pub.x = self.atck_est_states_[0]
-        atck_est_states_pub.y = self.atck_est_states_[1]
-        atck_est_states_pub.z = self.atck_est_states_[2]
-        atck_est_states_pub.timestamp = int(Clock().now().nanoseconds/1000)
+        atck_est_states_pub = PointStamped()
+        atck_est_states_pub.point.x = self.atck_est_states_[0]
+        atck_est_states_pub.point.y = self.atck_est_states_[1]
+        atck_est_states_pub.point.z = self.atck_est_states_[2]
+        atck_est_states_pub.header.stamp = stamp
+
+        # atck_est_states_pub.timestamp = int(Clock().now().nanoseconds/1000)
         self.detector_2.publish(atck_est_states_pub)
 
-        atck_past_setpoint_pub = Vector3Stamped()
-        atck_past_setpoint_pub.x = self.past_setpoint_[0]
-        atck_past_setpoint_pub.y = self.past_setpoint_[1]
-        atck_past_setpoint_pub.z = self.past_setpoint_[2]
-        atck_past_setpoint_pub.timestamp = int(Clock().now().nanoseconds/1000)
+        atck_past_setpoint_pub = PointStamped()
+        atck_past_setpoint_pub.point.x = self.past_setpoint_[0]
+        atck_past_setpoint_pub.point.y = self.past_setpoint_[1]
+        atck_past_setpoint_pub.point.z = self.past_setpoint_[2]
+        atck_past_setpoint_pub.header.stamp = stamp
+        # atck_past_setpoint_pub.timestamp = int(Clock().now().nanoseconds/1000)
         self.detector_3.publish(atck_past_setpoint_pub)
 
-        atck_true_setpoint_pub = Vector3Stamped()
-        atck_true_setpoint_pub.x = self.true_setpoint_[0]
-        atck_true_setpoint_pub.y = self.true_setpoint_[1]
-        atck_true_setpoint_pub.z = self.true_setpoint_[2]
-        atck_true_setpoint_pub.timestamp = int(Clock().now().nanoseconds/1000)
+        atck_true_setpoint_pub = PointStamped()
+        atck_true_setpoint_pub.point.x = self.true_setpoint_[0]
+        atck_true_setpoint_pub.point.y = self.true_setpoint_[1]
+        atck_true_setpoint_pub.point.z = self.true_setpoint_[2]
+       
+        # atck_true_setpoint_pub.timestamp = int(Clock().now().nanoseconds/1000)
+        atck_true_setpoint_pub.header.stamp = stamp
         self.detector_4.publish(atck_true_setpoint_pub)
 
-        atck_atck_setpoint_pub = Vector3Stamped()
-        atck_atck_setpoint_pub.x = self.atck_setpoint_[0]
-        atck_atck_setpoint_pub.y = self.atck_setpoint_[1]
-        atck_atck_setpoint_pub.z = self.atck_setpoint_[2]
-        atck_atck_setpoint_pub.timestamp = int(Clock().now().nanoseconds/1000)
+        atck_atck_setpoint_pub = PointStamped()
+        atck_atck_setpoint_pub.point.x = self.atck_setpoint_[0]
+        atck_atck_setpoint_pub.point.y = self.atck_setpoint_[1]
+        atck_atck_setpoint_pub.point.z = self.atck_setpoint_[2]
+        atck_atck_setpoint_pub.header.stamp = stamp
+
+        # atck_atck_setpoint_pub.timestamp = int(Clock().now().nanoseconds/1000)
         self.detector_5.publish(atck_atck_setpoint_pub)
 
         atck_engage_pub = Bool()
