@@ -140,7 +140,7 @@ class OffboardMission(Node):
                                               [0.00,0.62,0.00],
                                               [0.00,0.00,0.62]],dtype=np.float64)        # observer gain
 
-        self.detect_threshold   =   np.float64(1.00)         # detector threshold
+        self.detect_threshold   =   np.float64(0.90)         # detector threshold
 
         # variables for subscribers
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
@@ -279,6 +279,8 @@ class OffboardMission(Node):
                 else:
                     alpha   =   np.float64(0.0)
 
+                print(alpha)
+
                 self.trajectory_setpoint_x =   (1-alpha)*self.true_setpoint_[0]+alpha*self.atck_setpoint_[0]
                 self.trajectory_setpoint_y =   (1-alpha)*self.true_setpoint_[1]+alpha*self.atck_setpoint_[1]
                 self.trajectory_setpoint_z =   (1-alpha)*self.true_setpoint_[2]+alpha*self.atck_setpoint_[2]
@@ -377,10 +379,10 @@ def get_projection_matrix(vector):
 
     return proj_mat
 
-def main(args):
+def main(args=None):
     rclpy.init(args=None)
 
-    offboard_mission = OffboardMission(args)
+    offboard_mission = OffboardMission()
 
     rclpy.spin(offboard_mission)
 
