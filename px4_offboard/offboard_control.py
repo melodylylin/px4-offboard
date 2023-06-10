@@ -1,39 +1,7 @@
 #!/usr/bin/env python
-############################################################################
-#
-#   Copyright (C) 2022 PX4 Development Team. All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions
-# are met:
-#
-# 1. Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-# 2. Redistributions in binary form must reproduce the above copyright
-#    notice, this list of conditions and the following disclaimer in
-#    the documentation and/or other materials provided with the
-#    distribution.
-# 3. Neither the name PX4 nor the names of its contributors may be
-#    used to endorse or promote products derived from this software
-#    without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-# FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-# COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-# INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
-# OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
-# AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-# ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
-#
-############################################################################
 
-__author__ = "Jaeyoung Lim"
-__contact__ = "jalim@ethz.ch"
+__author__ = "Zhanpeng Yang, Minhyun Cho"
+__contact__ = "@purdue.edu"
 
 import rclpy
 import numpy as np
@@ -45,132 +13,120 @@ from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import TrajectorySetpoint
 from px4_msgs.msg import VehicleStatus, VehicleLocalPosition, VehicleCommand
 
-
 class OffboardControl(Node):
 
     def __init__(self):
 
-        super().__init__("px4_offboard")
+        # set the name of the node
+        super().__init__("px4_offboard_mocap_test")
 
-        qos_profile = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1
+        # set publisher and subscriber quality of service profile
+        qos_profile_pub = QoSProfile(
+            reliability = QoSReliabilityPolicy.BEST_EFFORT,
+            durability = QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history = QoSHistoryPolicy.KEEP_LAST,
+            depth = 1
         )
 
+        qos_profile_sub = QoSProfile(
+            reliability = QoSReliabilityPolicy.BEST_EFFORT,
+            durability = QoSDurabilityPolicy.VOLATILE,
+            history = QoSHistoryPolicy.KEEP_LAST,
+            depth = 1
+        )
+
+        # define subscribers
         self.status_sub = self.create_subscription(
             VehicleStatus,
             '/fmu/out/vehicle_status',
             self.vehicle_status_callback,
-            qos_profile)
+            qos_profile_sub)
 
-        # offboard script for checking the mocap
         self.local_pos_sub = self.create_subscription(
             VehicleLocalPosition,
             'fmu/out/vehicle_local_position',
             self.local_position_callback,
-            qos_profile)
-        # ------------------------------------------
+            qos_profile_sub)
 
+        # define publishers
         self.publisher_offboard_mode = self.create_publisher(
             OffboardControlMode, 
             '/fmu/in/offboard_control_mode', 
-            qos_profile)
+            qos_profile_pub)
 
         self.publisher_trajectory = self.create_publisher(
             TrajectorySetpoint, 
             '/fmu/in/trajectory_setpoint', 
-            qos_profile)
-
-        timer_period = 0.02  # seconds
-        self.timer = self.create_timer(timer_period, self.cmdloop_callback)
+            qos_profile_pub)
         
-        self.counter = 0
+        self.vehicle_command_publisher = self.create_publisher(
+            VehicleCommand, 
+            '/fmu/in/vehicle_command', 
+            qos_profile_pub)                                        # disable for an experiment
 
-        self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
-        self.dt = timer_period
-        # self.theta = 0.0
-        # self.radius = 10.0
-        # self.omega = 0.5
-
-        self.square = np.array([[3.0,0.0,-2.0],
-                               [3.0,-6.0,-2.0],
-                               [-3.0,-6.0,-2.0],
-                               [-3.0,0.0,-2.0]],dtype=np.float32)
-
+        # parameters for callback
+        self.timer_period   =   0.02  # seconds
+        self.timer = self.create_timer(self.timer_period, self.cmdloop_callback)
+        
+        self.square = np.array([[3.0,0.0,-2.5],
+                               [3.0,-6.0,-2.5],
+                               [-3.0,-6.0,-2.5],
+                               [-3.0,0.0,-2.5]],dtype=np.float64)
         self.pt_idx = np.uint8(0)
-        self.nav_wpt_reach_rad_ =   np.float32(0.1)
+        self.nav_wpt_reach_rad_ =   np.float64(0.1)
+        self.counter = np.uint16(0)                                 # disable for an experiment
 
-        self.vehicle_command_publisher_ = self.create_publisher(VehicleCommand, f"/fmu/in/vehicle_command", qos_profile) 
+        # variables for subscribers
+        self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
 
-        self.local_pos_ned_ = None
-        self.local_vel_ned_ = None
+        self.local_pos_ned = None
+        self.local_vel_ned = None
 
-    def vehicle_status_callback(self, msg):
+        # variables for publishers
+        self.offboard_ctrl_position = False
+        self.offboard_ctrl_velocity = False
+        self.offboard_ctrl_acceleration = False
+        self.offboard_ctrl_attitude = False
+        self.offboard_ctrl_body_rate = False
+        self.offboard_ctrl_actuator = False
+
+        self.trajectory_setpoint_x = np.float64(0.0)
+        self.trajectory_setpoint_y = np.float64(0.0)
+        self.trajectory_setpoint_z = np.float64(0.0)
+        self.trajectory_setpoint_yaw = np.float64(0.0)
+
+    # subscriber callback
+    def vehicle_status_callback(self,msg):
         # TODO: handle NED->ENU transformation
-        print("NAV_STATUS: ", msg.nav_state)
-        print("  - offboard status: ", VehicleStatus.NAVIGATION_STATE_OFFBOARD)
+        # print("NAV_STATUS: ", msg.nav_state)
+        # print("  - offboard status: ", VehicleStatus.NAVIGATION_STATE_OFFBOARD)
         self.nav_state = msg.nav_state
 
-    # offboard script for checking the mocap
-    def local_position_callback(self, msg):
-        self.local_pos_ned_     =   np.array([msg.x,msg.y,msg.z],dtype=np.float32)
-        self.local_vel_ned_     =   np.array([msg.vx,msg.vy,msg.vz],dtype=np.float32)
-    # ------------------------------------------
+    def local_position_callback(self,msg):
+        self.local_pos_ned      =   np.array([msg.x,msg.y,msg.z],dtype=np.float64)
+        self.local_vel_ned      =   np.array([msg.vx,msg.vy,msg.vz],dtype=np.float64)
 
-    def cmdloop_callback(self):
-        self.counter += 1
-        if self.counter == 10:
-            self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1., 6.)
-            self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0)
-            self.get_logger().info("Armed and dangerous....")
-        
-        # Publish offboard control modes
-        offboard_msg = OffboardControlMode()
-        offboard_msg.timestamp = int(Clock().now().nanoseconds / 1000)
-        offboard_msg.position = True
-        offboard_msg.velocity = False
-        offboard_msg.acceleration = False
-        self.publisher_offboard_mode.publish(offboard_msg)
+    # publisher
+    def publish_offboard_control_mode(self):
+        msg = OffboardControlMode()
+        msg.timestamp = int(rclpy.clock.Clock().now().nanoseconds/1000) # time in microseconds
+        msg.position = self.offboard_ctrl_position
+        msg.velocity = self.offboard_ctrl_velocity
+        msg.acceleration =self.offboard_ctrl_acceleration
+        msg.attitude = self.offboard_ctrl_attitude
+        msg.body_rate = self.offboard_ctrl_body_rate
+        self.publisher_offboard_mode.publish(msg)
 
-        # publish offboard position cmd
-        if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+    def publish_trajectory_setpoint(self):
+        msg = TrajectorySetpoint()
+        msg.timestamp = int(rclpy.clock.Clock().now().nanoseconds/1000) # time in microseconds
+        msg.position[0] = self.trajectory_setpoint_x
+        msg.position[1] = self.trajectory_setpoint_y
+        msg.position[2] = self.trajectory_setpoint_z
+        msg.yaw = self.trajectory_setpoint_yaw
+        self.publisher_trajectory.publish(msg)
 
-            trajectory_msg = TrajectorySetpoint()
-
-            trajectory_msg.position[0] = self.square[self.pt_idx][0]
-            trajectory_msg.position[1] = self.square[self.pt_idx][1]
-            trajectory_msg.position[2] = self.square[self.pt_idx][2]
-            self.publisher_trajectory.publish(trajectory_msg)
-            if self.local_pos_ned_ is not None and self.local_vel_ned_ is not None:
-                dist_xyz    =   np.sqrt(np.power(trajectory_msg.position[0]-self.local_pos_ned_[0],2)+ \
-                                        np.power(trajectory_msg.position[1]-self.local_pos_ned_[1],2)+ \
-                                        np.power(trajectory_msg.position[2]-self.local_pos_ned_[2],2))
-
-                if (self.pt_idx <= 2) and (dist_xyz <= self.nav_wpt_reach_rad_):
-                    self.pt_idx = self.pt_idx+1
-
-                elif (self.pt_idx == 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
-                    self.pt_idx = 0
-
-        # if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
-
-        #     trajectory_msg = TrajectorySetpoint()
-        #     trajectory_msg.position[0] = self.radius * np.cos(self.theta)
-        #     trajectory_msg.position[1] = self.radius * np.sin(self.theta)
-        #     trajectory_msg.position[2] = -5.0
-        #     self.publisher_trajectory.publish(trajectory_msg)
-
-        #     self.theta = self.theta + self.omega * self.dt
-
-    '''
-    Publish vehicle commands
-        command   Command code (matches VehicleCommand and MAVLink MAV_CMD codes)
-        param1    Command parameter 1 as defined by MAVLink uint16 VEHICLE_CMD enum
-        param2    Command parameter 2 as defined by MAVLink uint16 VEHICLE_CMD enum
-    '''
-    def publish_vehicle_command(self, command, param1=0.0, param2=0.0):
+    def publish_vehicle_command(self,command,param1=0.0,param2=0.0):            # disable for an experiment
         msg = VehicleCommand()
         msg.param1 = param1
         msg.param2 = param2
@@ -181,7 +137,40 @@ class OffboardControl(Node):
         msg.source_component = 1  # component sending the command
         msg.from_external = True
         msg.timestamp = int(Clock().now().nanoseconds / 1000) # time in microseconds
-        self.vehicle_command_publisher_.publish(msg)
+        self.vehicle_command_publisher.publish(msg)
+
+    def cmdloop_callback(self):
+
+        self.counter += 1     # disable for an experiment
+        
+        if self.counter >= 10 and self.counter <= 20:     # disable for an experiment
+            self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE,1.,6.)
+            self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,1.)
+            self.get_logger().info("Armed and dangerous....")
+        
+        # publish offboard control modes
+        self.offboard_ctrl_position = True
+        self.publish_offboard_control_mode()
+
+        # publish offboard position cmd
+        self.trajectory_setpoint_x = self.square[self.pt_idx][0]
+        self.trajectory_setpoint_y = self.square[self.pt_idx][1]
+        self.trajectory_setpoint_z = self.square[self.pt_idx][2]
+        self.publish_trajectory_setpoint()
+
+        if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
+
+            if self.local_pos_ned is not None and self.local_vel_ned is not None:
+                dist_xyz    =   np.sqrt(np.power(self.trajectory_setpoint_x-self.local_pos_ned[0],2)+ \
+                                        np.power(self.trajectory_setpoint_y-self.local_pos_ned[1],2)+ \
+                                        np.power(self.trajectory_setpoint_z-self.local_pos_ned[2],2))
+
+                if (self.pt_idx <= 2) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    self.pt_idx = self.pt_idx+1
+
+                elif (self.pt_idx == 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    self.pt_idx = 0
+
 
 def main(args=None):
     rclpy.init(args=args)
