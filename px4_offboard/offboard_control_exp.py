@@ -68,10 +68,10 @@ class OffboardControl(Node):
         self.timer_period   =   0.02  # seconds
         self.timer = self.create_timer(self.timer_period, self.cmdloop_callback)
         
-        self.square = np.array([[3.0,0.0,-2.5],
-                               [3.0,-6.0,-2.5],
-                               [-3.0,-6.0,-2.5],
-                               [-3.0,0.0,-2.5]],dtype=np.float64)
+        self.square = np.array([[3.0,0.0,-1.2],
+                               [3.0,-6.0,-1.2],
+                               [-3.0,-6.0,-1.2],
+                               [-3.0,0.0,-1.2]],dtype=np.float64)
         self.pt_idx = np.uint8(0)
         self.nav_wpt_reach_rad_ =   np.float64(0.1)
         # self.counter = np.uint16(0)                                 # disable for an experiment

@@ -243,7 +243,7 @@ class OffboardMission(Node):
             if self.entry_execute_:
 
                 self.entry_execute_ 	   = 	0
-                self.cur_wpt_  = np.array([0.0,0.0,-2.0],dtype=np.float64)
+                self.cur_wpt_  = np.array([0.0,0.0,-1.2],dtype=np.float64)
                 self.past_wpt_ = self.local_pos_ned_
                 self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
                 self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
@@ -284,7 +284,7 @@ class OffboardMission(Node):
 
                 self.entry_execute_ 	    = 	0
 
-                self.past_wpt_              =   np.array([0.0,0.0,-2.0],dtype=np.float64)
+                self.past_wpt_              =   np.array([0.0,0.0,-1.2],dtype=np.float64)
                 self.true_cur_wpt_          =   np.add(self.past_wpt_,np.array([0.0,-6.0,0.0],dtype=np.float64))
                 self.atck_cur_wpt_          =   np.add(self.past_wpt_,np.array([3.0,-6.0,0.0],dtype=np.float64))
                 self.atck_engage_           =   True
@@ -357,8 +357,8 @@ class OffboardMission(Node):
 
             else:
                 self.past = np.array([0.0,0.0,0.0],dtype=np.float64)
-                
-            self.cur_wpt_ = np.array([0.0,0.0,-2.0],dtype=np.float64)
+
+            self.cur_wpt_ = np.array([0.0,0.0,-1.2],dtype=np.float64)
 
             self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
             self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
