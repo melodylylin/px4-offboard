@@ -3,10 +3,9 @@
 __author__ = "Zhanpeng Yang, Minhyun Cho"
 __contact__ = "@purdue.edu"
 
-import argparse
-
 import rclpy
 import numpy as np
+
 from rclpy.node import Node
 from rclpy.clock import Clock
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
@@ -20,7 +19,7 @@ from std_msgs.msg import UInt8, Bool
 
 class OffboardMission(Node):
 
-    def __init__(self,test_on):
+    def __init__(self):
 
         super().__init__("px4_offboard_mission")
 
@@ -142,12 +141,6 @@ class OffboardMission(Node):
                                               [0.00,0.00,0.62]],dtype=np.float64)        # observer gain
 
         self.detect_threshold   =   np.float64(1.00)         # detector threshold
-
-        if test_on == 1:
-            self.reconfigure_on =   np.uint8(1)
-
-        else:
-            self.reconfigure_on =   np.uint8(0)
 
         # variables for subscribers
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
@@ -302,22 +295,15 @@ class OffboardMission(Node):
                                                 (np.matmul(np.atleast_2d(self.atck_act_states_),(self.Lobv).T)).flatten()- \
                                                 (np.matmul(np.atleast_2d(ack_vec),(self.Lobv).T)).flatten()
 
-                if (np.linalg.norm(self.atck_est_states_-self.atck_act_states_) >= self.detect_threshold) and \
-                    (self.reconfigure_on == 1):
+                if (np.linalg.norm(self.atck_est_states_-self.atck_act_states_) >= self.detect_threshold):
 
                     self.atck_engage_       =   False
                     self.atck_detect_       =   True
 
                 # transition
-                if self.reconfigure_on == 1:
-                    dist_xyz    =   np.sqrt(np.power(self.true_setpoint_[0]-self.local_pos_ned_[0],2)+ \
-                                            np.power(self.true_setpoint_[1]-self.local_pos_ned_[1],2)+ \
-                                            np.power(self.true_setpoint_[2]-self.local_pos_ned_[2],2))
-                    
-                else:
-                    dist_xyz    =   np.sqrt(np.power(self.atck_setpoint_[0]-self.local_pos_ned_[0],2)+ \
-                                            np.power(self.atck_setpoint_[1]-self.local_pos_ned_[1],2)+ \
-                                            np.power(self.atck_setpoint_[2]-self.local_pos_ned_[2],2))
+                dist_xyz    =   np.sqrt(np.power(self.true_setpoint_[0]-self.local_pos_ned_[0],2)+ \
+                                        np.power(self.true_setpoint_[1]-self.local_pos_ned_[1],2)+ \
+                                        np.power(self.true_setpoint_[2]-self.local_pos_ned_[2],2))
 
                 if dist_xyz < self.nav_wpt_reach_rad_:
 
@@ -404,10 +390,4 @@ def main(args):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Test Mode Setting')
-    parser.add_argument('--mode', '-m', type=int, default=1)
-    val = parser.parse_args()
-    print(val)
-    print(type(val))
-
-    main(val)
+    main()
