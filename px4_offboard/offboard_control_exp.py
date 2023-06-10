@@ -58,6 +58,11 @@ class OffboardControl(Node):
             TrajectorySetpoint, 
             '/fmu/in/trajectory_setpoint', 
             qos_profile_pub)
+        
+        # self.vehicle_command_publisher = self.create_publisher(
+        #     VehicleCommand, 
+        #     '/fmu/in/vehicle_command', 
+        #     qos_profile_pub)                                        # disable for an experiment
 
         # parameters for callback
         self.timer_period   =   0.02  # seconds
@@ -69,6 +74,13 @@ class OffboardControl(Node):
                                [-3.0,0.0,-2.5]],dtype=np.float64)
         self.pt_idx = np.uint8(0)
         self.nav_wpt_reach_rad_ =   np.float64(0.1)
+        # self.counter = np.uint16(0)                                 # disable for an experiment
+
+        self.theta  = np.float64(0.0)
+        self.omega  = np.float64(1/10)
+
+        self.cur_wpt_ = np.array([0.0,0.0,0.0],dtype=np.float64)
+        self.past_wpt_ = np.array([0.0,0.0,0.0],dtype=np.float64)
 
         # variables for subscribers
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
@@ -120,30 +132,66 @@ class OffboardControl(Node):
         msg.yaw = self.trajectory_setpoint_yaw
         self.publisher_trajectory.publish(msg)
 
+    # def publish_vehicle_command(self,command,param1=0.0,param2=0.0):            # disable for an experiment
+    #     msg = VehicleCommand()
+    #     msg.param1 = param1
+    #     msg.param2 = param2
+    #     msg.command = command  # command ID
+    #     msg.target_system = 0  # system which should execute the command
+    #     msg.target_component = 1  # component which should execute the command, 0 for all components
+    #     msg.source_system = 1  # system sending the command
+    #     msg.source_component = 1  # component sending the command
+    #     msg.from_external = True
+    #     msg.timestamp = int(Clock().now().nanoseconds / 1000) # time in microseconds
+    #     self.vehicle_command_publisher.publish(msg)
+
     def cmdloop_callback(self):
-       
+
+        # self.counter += 1     # disable for an experiment
+        
+        # if self.counter >= 10 and self.counter <= 20:     # disable for an experiment
+        #     self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE,1.,6.)
+        #     self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,1.)
+        #     self.get_logger().info("Armed and dangerous....")
+        
         # publish offboard control modes
         self.offboard_ctrl_position = True
         self.publish_offboard_control_mode()
 
         # publish offboard position cmd
-        self.trajectory_setpoint_x = self.square[self.pt_idx][0]
-        self.trajectory_setpoint_y = self.square[self.pt_idx][1]
-        self.trajectory_setpoint_z = self.square[self.pt_idx][2]
+        self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
+        self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
+        self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
         self.publish_trajectory_setpoint()
+
+        print([self.trajectory_setpoint_x,self.trajectory_setpoint_y,self.trajectory_setpoint_z])
 
         if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
 
             if self.local_pos_ned is not None and self.local_vel_ned is not None:
-                dist_xyz    =   np.sqrt(np.power(self.trajectory_setpoint_x-self.local_pos_ned[0],2)+ \
-                                        np.power(self.trajectory_setpoint_y-self.local_pos_ned[1],2)+ \
-                                        np.power(self.trajectory_setpoint_z-self.local_pos_ned[2],2))
+                dist_xyz    =   np.sqrt(np.power(self.cur_wpt_[0]-self.local_pos_ned[0],2)+ \
+                                        np.power(self.cur_wpt_[1]-self.local_pos_ned[1],2)+ \
+                                        np.power(self.cur_wpt_[2]-self.local_pos_ned[2],2))
 
                 if (self.pt_idx <= 2) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    self.theta = np.float64(0.0)
+                    self.past_wpt_ = self.square[self.pt_idx].flatten()
                     self.pt_idx = self.pt_idx+1
+                    self.cur_wpt_ = self.square[self.pt_idx].flatten()
 
                 elif (self.pt_idx == 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    self.theta = np.float64(0.0)
+                    self.past_wpt_ = self.square[self.pt_idx].flatten()
                     self.pt_idx = 0
+                    self.cur_wpt_ = self.square[self.pt_idx].flatten()
+
+            self.theta = self.theta+self.omega*self.timer_period
+            self.theta = np.clip(self.theta,a_min=0.0,a_max=1.0)
+
+        else:
+            self.theta  = np.float64(0.0)
+            self.cur_wpt_ = self.square[self.pt_idx]
+            self.past_wpt_ = self.local_pos_ned
 
 
 def main(args=None):

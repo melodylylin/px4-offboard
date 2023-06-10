@@ -3,6 +3,8 @@
 __author__ = "Zhanpeng Yang, Minhyun Cho"
 __contact__ = "@purdue.edu"
 
+import argparse
+
 import rclpy
 import numpy as np
 
@@ -19,7 +21,7 @@ from std_msgs.msg import UInt8, Bool
 
 class OffboardMission(Node):
 
-    def __init__(self):
+    def __init__(self,mode):
 
         super().__init__("px4_offboard_mission")
 
@@ -61,6 +63,11 @@ class OffboardMission(Node):
             TrajectorySetpoint, 
             '/fmu/in/trajectory_setpoint', 
             qos_profile_pub)
+        
+        # self.vehicle_command_publisher = self.create_publisher(
+        #     VehicleCommand, 
+        #     '/fmu/in/vehicle_command', 
+        #     qos_profile_pub)                                        # disable for an experiment
 
         self.detector_1 = self.create_publisher(
             PointStamped,
@@ -117,11 +124,19 @@ class OffboardMission(Node):
         self.flight_phase_ = np.uint8(1)
         self.entry_execute_ = np.uint8(1)
 
+        # self.counter = np.uint16(0)                                 # disable for an experiment
+
+        self.theta  = np.float64(0.0)
+        self.omega  = np.float64(1/10)
+
+        self.cur_wpt_ = np.array([0.0,0.0,0.0],dtype=np.float64)
+        self.past_wpt_ = np.array([0.0,0.0,0.0],dtype=np.float64)
+
         self.nav_wpt_reach_rad_ =   np.float32(0.1)     # waypoint reach condition radius
 
-        self.past_setpoint_     =   np.array([0.0,0.0,0.0],dtype=np.float64)
-        self.true_setpoint_     =   np.array([0.0,0.0,0.0],dtype=np.float64)
-        self.atck_setpoint_     =   np.array([0.0,0.0,0.0],dtype=np.float64)
+        self.past_wpt_     =   np.array([0.0,0.0,0.0],dtype=np.float64)
+        self.true_cur_wpt_     =   np.array([0.0,0.0,0.0],dtype=np.float64)
+        self.atck_cur_wpt_     =   np.array([0.0,0.0,0.0],dtype=np.float64)
 
         self.atck_engage_       =   False
         self.atck_detect_       =   True
@@ -134,6 +149,13 @@ class OffboardMission(Node):
                                               [0.00,0.00,0.62]],dtype=np.float64)        # observer gain
 
         self.detect_threshold   =   np.float64(0.90)         # detector threshold
+
+        if mode == 1:
+            self.reconfiguration = np.uint8(1)
+
+        else:
+            self.reconfiguration = np.uint8(0)    
+
 
         # variables for subscribers
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
@@ -185,7 +207,27 @@ class OffboardMission(Node):
         msg.yaw = self.trajectory_setpoint_yaw
         self.publisher_trajectory.publish(msg)
 
+    # def publish_vehicle_command(self,command,param1=0.0,param2=0.0):            # disable for an experiment
+    #     msg = VehicleCommand()
+    #     msg.param1 = param1
+    #     msg.param2 = param2
+    #     msg.command = command  # command ID
+    #     msg.target_system = 0  # system which should execute the command
+    #     msg.target_component = 1  # component which should execute the command, 0 for all components
+    #     msg.source_system = 1  # system sending the command
+    #     msg.source_component = 1  # component sending the command
+    #     msg.from_external = True
+    #     msg.timestamp = int(Clock().now().nanoseconds / 1000) # time in microseconds
+    #     self.vehicle_command_publisher.publish(msg)
+
     def cmdloop_callback(self):
+
+        # self.counter += 1   # disable for an experiment
+
+        # if self.counter >= 10 and self.counter <= 20:
+        #     self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE,1.0,6.0)
+        #     self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,1.0)
+        #     self.get_logger().info("Armed and dangerous....")
 
         # publish offboard control modes
         self.offboard_ctrl_position = True
@@ -200,22 +242,31 @@ class OffboardMission(Node):
             # entry:
             if self.entry_execute_:
 
-                self.entry_execute_ 	    = 	0
-                self.trajectory_setpoint_x =   np.float64(0.0)
-                self.trajectory_setpoint_y =   np.float64(0.0)
-                self.trajectory_setpoint_z =   np.float64(-2.0)
+                self.entry_execute_ 	   = 	0
+                self.cur_wpt_  = np.array([0.0,0.0,-2.0],dtype=np.float64)
+                self.past_wpt_ = self.local_pos_ned_
+                self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
+                self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
+                self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
                 self.trajectory_setpoint_yaw  =   np.float64(0.0)
                 self.publish_trajectory_setpoint()
 
             # during:
             print("Current Mode: Offboard (Position hold at a starting point)")
+            self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
+            self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
+            self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
+            self.trajectory_setpoint_yaw  =   np.float64(0.0)
             self.publish_trajectory_setpoint()
+
+            self.theta = self.theta+self.omega*self.timer_period
+            self.theta = np.clip(self.theta,a_min=0.0,a_max=1.0)
 
             # transition
             if (self.local_pos_ned_ is not None) and (self.local_vel_ned_ is not None):
-                dist_xyz    =   np.sqrt(np.power(self.trajectory_setpoint_x-self.local_pos_ned_[0],2)+ \
-                                        np.power(self.trajectory_setpoint_y-self.local_pos_ned_[1],2)+ \
-                                        np.power(self.trajectory_setpoint_z-self.local_pos_ned_[2],2))
+                dist_xyz    =   np.sqrt(np.power(self.cur_wpt_[0]-self.local_pos_ned_[0],2)+ \
+                                        np.power(self.cur_wpt_[1]-self.local_pos_ned_[1],2)+ \
+                                        np.power(self.cur_wpt_[2]-self.local_pos_ned_[2],2))
 
                 if dist_xyz < self.nav_wpt_reach_rad_:
 
@@ -233,32 +284,42 @@ class OffboardMission(Node):
 
                 self.entry_execute_ 	    = 	0
 
-                self.past_setpoint_         =   np.array([0.0,0.0,-2.0],dtype=np.float64)
-                self.true_setpoint_         =   np.add(self.past_setpoint_,np.array([0.0,-6.0,0.0],dtype=np.float64))
-                self.atck_setpoint_         =   np.add(self.past_setpoint_,np.array([3.0,-6.0,0.0],dtype=np.float64))
+                self.past_wpt_              =   np.array([0.0,0.0,-2.0],dtype=np.float64)
+                self.true_cur_wpt_          =   np.add(self.past_wpt_,np.array([0.0,-6.0,0.0],dtype=np.float64))
+                self.atck_cur_wpt_          =   np.add(self.past_wpt_,np.array([3.0,-6.0,0.0],dtype=np.float64))
                 self.atck_engage_           =   True
                 self.atck_detect_           =   False
+                self.theta  = np.float64(0.0)
 
             # during:
             if (self.local_pos_ned_ is not None) and (self.local_vel_ned_ is not None):
 
                 print("Current Mode: Offboard (wpt mission to test the detector)")
-                alpha       =   (self.local_pos_ned_[1]-self.past_setpoint_[1])/ \
-                                (self.true_setpoint_[1]-self.past_setpoint_[1])
+                alpha       =   (self.local_pos_ned_[1]-self.past_wpt_[1])/ \
+                                (self.true_cur_wpt_[1]-self.past_wpt_[1])
                 alpha       =   np.clip(2*alpha,a_min = 0,a_max = 1)
 
-                if self.atck_engage_ and not self.atck_detect_:
-                    alpha   =   alpha
-                else:
-                    alpha   =   np.float64(0.0)
+                if self.reconfiguration == 1:
 
-                self.trajectory_setpoint_x =   (1-alpha)*self.true_setpoint_[0]+alpha*self.atck_setpoint_[0]
-                self.trajectory_setpoint_y =   (1-alpha)*self.true_setpoint_[1]+alpha*self.atck_setpoint_[1]
-                self.trajectory_setpoint_z =   (1-alpha)*self.true_setpoint_[2]+alpha*self.atck_setpoint_[2]
+                    if self.atck_engage_ and not self.atck_detect_:
+                        alpha   =   alpha
+                    else:
+                        alpha   =   np.float64(0.0)
+
+                else:
+                    alpha   =   alpha
+
+                self.cur_wpt_[0] =   (1-alpha)*self.true_cur_wpt_[0]+alpha*self.atck_cur_wpt_[0]
+                self.cur_wpt_[1] =   (1-alpha)*self.true_cur_wpt_[1]+alpha*self.atck_cur_wpt_[1]
+                self.cur_wpt_[2] =   (1-alpha)*self.true_cur_wpt_[2]+alpha*self.atck_cur_wpt_[2]
+
+                self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
+                self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
+                self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
                 self.trajectory_setpoint_yaw  =   np.float64(0.0)
                 self.publish_trajectory_setpoint()
 
-                proj_atck   =   get_projection_matrix(self.true_setpoint_-self.atck_setpoint_)
+                proj_atck   =   get_projection_matrix(self.true_cur_wpt_-self.atck_cur_wpt_)
 
                 self.atck_act_states_       =   self.local_pos_ned_
                 ack_vec                     =   (np.matmul(np.atleast_2d(self.atck_act_states_),proj_atck)).flatten()
@@ -273,10 +334,13 @@ class OffboardMission(Node):
                     self.atck_engage_       =   False
                     self.atck_detect_       =   True
 
+                self.theta = self.theta+self.omega*self.timer_period
+                self.theta = np.clip(self.theta,a_min=0.0,a_max=1.0)
+
                 # transition
-                dist_xyz    =   np.sqrt(np.power(self.true_setpoint_[0]-self.local_pos_ned_[0],2)+ \
-                                        np.power(self.true_setpoint_[1]-self.local_pos_ned_[1],2)+ \
-                                        np.power(self.true_setpoint_[2]-self.local_pos_ned_[2],2))
+                dist_xyz    =   np.sqrt(np.power(self.cur_wpt_[0]-self.local_pos_ned_[0],2)+ \
+                                        np.power(self.cur_wpt_[1]-self.local_pos_ned_[1],2)+ \
+                                        np.power(self.cur_wpt_[2]-self.local_pos_ned_[2],2))
 
                 if dist_xyz < self.nav_wpt_reach_rad_:
 
@@ -287,13 +351,22 @@ class OffboardMission(Node):
             self.flight_phase_     =	1
             self.entry_execute_    =	1
 
-            self.trajectory_setpoint_x =   np.float64(0.0)
-            self.trajectory_setpoint_y =   np.float64(0.0)
-            self.trajectory_setpoint_z =   np.float64(-2.0)
+            self.theta  = np.float64(0.0)
+            if (self.local_pos_ned_ is not None):
+                self.past_wpt_ = self.local_pos_ned_
+
+            else:
+                self.past = np.array([0.0,0.0,0.0],dtype=np.float64)
+                
+            self.cur_wpt_ = np.array([0.0,0.0,-2.0],dtype=np.float64)
+
+            self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
+            self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
+            self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
             self.trajectory_setpoint_yaw  =   np.float64(0.0)
             self.publish_trajectory_setpoint()
 
-        
+            
         stamp = self.get_clock().now().to_msg()
 
         atck_act_states_pub = PointStamped()
@@ -311,23 +384,23 @@ class OffboardMission(Node):
         self.detector_2.publish(atck_est_states_pub)
 
         atck_past_setpoint_pub = PointStamped()
-        atck_past_setpoint_pub.point.x = self.past_setpoint_[0]
-        atck_past_setpoint_pub.point.y = self.past_setpoint_[1]
-        atck_past_setpoint_pub.point.z = self.past_setpoint_[2]
+        atck_past_setpoint_pub.point.x = self.past_wpt_[0]
+        atck_past_setpoint_pub.point.y = self.past_wpt_[1]
+        atck_past_setpoint_pub.point.z = self.past_wpt_[2]
         atck_past_setpoint_pub.header.stamp = stamp
         self.detector_3.publish(atck_past_setpoint_pub)
 
         atck_true_setpoint_pub = PointStamped()
-        atck_true_setpoint_pub.point.x = self.true_setpoint_[0]
-        atck_true_setpoint_pub.point.y = self.true_setpoint_[1]
-        atck_true_setpoint_pub.point.z = self.true_setpoint_[2]
+        atck_true_setpoint_pub.point.x = self.true_cur_wpt_[0]
+        atck_true_setpoint_pub.point.y = self.true_cur_wpt_[1]
+        atck_true_setpoint_pub.point.z = self.true_cur_wpt_[2]
         atck_true_setpoint_pub.header.stamp = stamp
         self.detector_4.publish(atck_true_setpoint_pub)
 
         atck_atck_setpoint_pub = PointStamped()
-        atck_atck_setpoint_pub.point.x = self.atck_setpoint_[0]
-        atck_atck_setpoint_pub.point.y = self.atck_setpoint_[1]
-        atck_atck_setpoint_pub.point.z = self.atck_setpoint_[2]
+        atck_atck_setpoint_pub.point.x = self.atck_cur_wpt_[0]
+        atck_atck_setpoint_pub.point.y = self.atck_cur_wpt_[1]
+        atck_atck_setpoint_pub.point.z = self.atck_cur_wpt_[2]
         atck_atck_setpoint_pub.header.stamp = stamp
         self.detector_5.publish(atck_atck_setpoint_pub)
 
@@ -350,10 +423,14 @@ def get_projection_matrix(vector):
 
     return proj_mat
 
-def main(args=None):
+def main():
+    parser = argparse.ArgumentParser(description='Delivering parameters for tests')
+    parser.add_argument('--mode','-m',type=int,default=np.uint8(1),help='mode setting')
+    argin = parser.parse_args()
+
     rclpy.init(args=None)
 
-    offboard_mission = OffboardMission()
+    offboard_mission = OffboardMission(argin.mode)
 
     rclpy.spin(offboard_mission)
 

@@ -76,6 +76,12 @@ class OffboardControl(Node):
         self.nav_wpt_reach_rad_ =   np.float64(0.1)
         self.counter = np.uint16(0)                                 # disable for an experiment
 
+        self.theta  = np.float64(0.0)
+        self.omega  = np.float64(1/10)
+
+        self.cur_wpt_ = np.array([0.0,0.0,0.0],dtype=np.float64)
+        self.past_wpt_ = np.array([0.0,0.0,0.0],dtype=np.float64)
+
         # variables for subscribers
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
 
@@ -153,23 +159,39 @@ class OffboardControl(Node):
         self.publish_offboard_control_mode()
 
         # publish offboard position cmd
-        self.trajectory_setpoint_x = self.square[self.pt_idx][0]
-        self.trajectory_setpoint_y = self.square[self.pt_idx][1]
-        self.trajectory_setpoint_z = self.square[self.pt_idx][2]
+        self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
+        self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
+        self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
         self.publish_trajectory_setpoint()
+
+        print([self.trajectory_setpoint_x,self.trajectory_setpoint_y,self.trajectory_setpoint_z])
 
         if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
 
             if self.local_pos_ned is not None and self.local_vel_ned is not None:
-                dist_xyz    =   np.sqrt(np.power(self.trajectory_setpoint_x-self.local_pos_ned[0],2)+ \
-                                        np.power(self.trajectory_setpoint_y-self.local_pos_ned[1],2)+ \
-                                        np.power(self.trajectory_setpoint_z-self.local_pos_ned[2],2))
+                dist_xyz    =   np.sqrt(np.power(self.cur_wpt_[0]-self.local_pos_ned[0],2)+ \
+                                        np.power(self.cur_wpt_[1]-self.local_pos_ned[1],2)+ \
+                                        np.power(self.cur_wpt_[2]-self.local_pos_ned[2],2))
 
                 if (self.pt_idx <= 2) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    self.theta = np.float64(0.0)
+                    self.past_wpt_ = self.square[self.pt_idx].flatten()
                     self.pt_idx = self.pt_idx+1
+                    self.cur_wpt_ = self.square[self.pt_idx].flatten()
 
                 elif (self.pt_idx == 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    self.theta = np.float64(0.0)
+                    self.past_wpt_ = self.square[self.pt_idx].flatten()
                     self.pt_idx = 0
+                    self.cur_wpt_ = self.square[self.pt_idx].flatten()
+
+            self.theta = self.theta+self.omega*self.timer_period
+            self.theta = np.clip(self.theta,a_min=0.0,a_max=1.0)
+
+        else:
+            self.theta  = np.float64(0.0)
+            self.cur_wpt_ = self.square[self.pt_idx]
+            self.past_wpt_ = self.local_pos_ned
 
 
 def main(args=None):
