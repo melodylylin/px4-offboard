@@ -9,9 +9,6 @@ from px4_msgs.msg import VehicleOdometry
 # from px4_msgs.msg import TrajectorySetpoint
 # from px4_msgs.msg import VehicleStatus
 
-from lienp.SO3 import SO3
-
-
 def quat_product(qa, qb):
     r1 = qa[0]
     v1 = qa[1:]
