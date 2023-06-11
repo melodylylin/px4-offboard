@@ -10,7 +10,14 @@ def generate_launch_description():
             package='px4_offboard',
             namespace='px4_offboard',
             executable='stream_mocap',
-            name='stream_mocap'
+            name='stream_mocap',
         ),
 
+        Node(
+            package='qualisys_mocap',
+            executable='qualisys_node',
+            parameters=[
+                {'server': '192.168.123.2'},
+            ],
+        ),
     ])
