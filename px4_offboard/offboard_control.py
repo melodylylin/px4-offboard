@@ -99,7 +99,7 @@ class OffboardControl(Node):
         self.trajectory_setpoint_x = np.float64(0.0)
         self.trajectory_setpoint_y = np.float64(0.0)
         self.trajectory_setpoint_z = np.float64(0.0)
-        self.trajectory_setpoint_yaw = np.float64(0.0)
+        self.trajectory_setpoint_yaw = np.float64(-np.pi/2)
 
     # subscriber callback
     def vehicle_status_callback(self,msg):

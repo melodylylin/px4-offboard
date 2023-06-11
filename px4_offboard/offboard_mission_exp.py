@@ -248,7 +248,7 @@ class OffboardMission(Node):
                 self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
                 self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
                 self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
-                self.trajectory_setpoint_yaw  =   np.float64(0.0)
+                self.trajectory_setpoint_yaw  =   np.float64(-np.pi/2)
                 self.publish_trajectory_setpoint()
 
             # during:
@@ -256,7 +256,7 @@ class OffboardMission(Node):
             self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
             self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
             self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
-            self.trajectory_setpoint_yaw  =   np.float64(0.0)
+            self.trajectory_setpoint_yaw  =   np.float64(-np.pi/2)
             self.publish_trajectory_setpoint()
 
             self.theta = self.theta+self.omega*self.timer_period
@@ -316,7 +316,7 @@ class OffboardMission(Node):
                 self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
                 self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
                 self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
-                self.trajectory_setpoint_yaw  =   np.float64(0.0)
+                self.trajectory_setpoint_yaw  =   np.float64(-np.pi/2)
                 self.publish_trajectory_setpoint()
 
                 proj_atck   =   get_projection_matrix(self.true_cur_wpt_-self.atck_cur_wpt_)
@@ -363,7 +363,7 @@ class OffboardMission(Node):
             self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
             self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
             self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
-            self.trajectory_setpoint_yaw  =   np.float64(0.0)
+            self.trajectory_setpoint_yaw  =   np.float64(-np.pi/2)
             self.publish_trajectory_setpoint()
 
             
