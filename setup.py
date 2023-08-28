@@ -28,10 +28,12 @@ setup(
         'console_scripts': [
                 'offboard_control = px4_offboard.offboard_control:main',
                 'offboard_mission = px4_offboard.offboard_mission:main',
+                'offboard_nominal = px4_offboard.offboard_nominal:main',
                 'visualizer = px4_offboard.visualizer:main',
                 'stream_mocap = px4_offboard.stream_mocap:main',
                 'offboard_control_exp = px4_offboard.offboard_control_exp:main',
                 'offboard_mission_exp = px4_offboard.offboard_mission_exp:main',
+                'offboard_nominal_exp = px4_offboard.offboard_nominal_exp:main',
         ],
     },
 )
