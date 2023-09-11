@@ -119,6 +119,8 @@ class OffboardMission(Node):
 
         # parameters for callback
         self.timer_period   =   0.02  # seconds
+        self.time_start = 0.0
+        self.time_now = int(rclpy.clock.Clock().now().nanoseconds/1000) 
         self.timer = self.create_timer(self.timer_period, self.cmdloop_callback)
 
         self.flight_phase_ = np.uint8(1)
@@ -126,9 +128,9 @@ class OffboardMission(Node):
 
        # self.counter = np.uint16(0)                                 # disable for an experiment
 
-        self.wpt_set_ = np.array([[0.0,-1.0,-1.2],
-                                  [0.0,-1.5,-1.2],
-                                  [0.0,-2.0,-1.2]])
+        self.wpt_set_ = np.array([[3.5,-5.5,-3.0],
+                                  [3.5,-5.5,-3.0],
+                                  [3.5,-5.5,-3.0]])
         
         self.theta  = np.float64(0.0)
         self.omega  = np.float64(1/10)
@@ -241,7 +243,7 @@ class OffboardMission(Node):
             if self.entry_execute_:
 
                 self.entry_execute_  = 	0
-                self.cur_wpt_  = np.array([0.0,0.0,-1.2],dtype=np.float64)
+                self.cur_wpt_  = np.array([3.5,-5.5,-3.0],dtype=np.float64)
                 self.past_wpt_ = self.local_pos_ned_
                 self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
                 self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
@@ -285,15 +287,16 @@ class OffboardMission(Node):
                 self.past_wpt_              =   self.local_pos_ned_ #np.array([0.0,0.0,-1.2],dtype=np.float64)
                 self.cur_wpt_               =   self.wpt_set_[self.wpt_idx_].flatten() #np.add(self.past_wpt_,np.array([0.0,-6.0,0.0],dtype=np.float64))
                 self.theta  = np.float64(0.0)
+                self.time_start = int(rclpy.clock.Clock().now().nanoseconds/1000)
 
             # during:
             if (self.local_pos_ned_ is not None) and (self.local_vel_ned_ is not None):
 
                 print("Current Mode: Offboard (wpt mission)")
 
-                self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
-                self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
-                self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
+                self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]#+(1-self.theta)*self.past_wpt_[0]
+                self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]#+(1-self.theta)*self.past_wpt_[1]
+                self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]#+(1-self.theta)*self.past_wpt_[2]
                 self.trajectory_setpoint_yaw  =   np.float64(-np.pi/2)
                 self.publish_trajectory_setpoint()
 
@@ -305,14 +308,19 @@ class OffboardMission(Node):
                                         np.power(self.cur_wpt_[1]-self.local_pos_ned_[1],2)+ \
                                         np.power(self.cur_wpt_[2]-self.local_pos_ned_[2],2))
 
-                if (self.wpt_idx_ <= 2) and (dist_xyz <= self.nav_wpt_reach_rad_):
-                    self.past_wpt_ = self.wpt_set_[self.wpt_idx_].flatten()
-                    self.wpt_idx_ = self.wpt_idx_+1
-                    self.cur_wpt_ = self.wpt_set_[self.wpt_idx_]
-
-                elif (self.wpt_idx_ == 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
-                    # exit:
+                self.time_now = int(rclpy.clock.Clock().now().nanoseconds/1000) 
+                if (self.time_now - self.time_start >= 5000000000):
+                    #exit
                     print("Offboard mission finished")
+                
+                #if (self.wpt_idx_ <= 2) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                #    self.past_wpt_ = self.wpt_set_[self.wpt_idx_].flatten()
+                #    self.wpt_idx_ = self.wpt_idx_+1
+                #    self.cur_wpt_ = self.wpt_set_[self.wpt_idx_]
+
+                #elif (self.wpt_idx_ == 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                #    # exit:
+                #    print("Offboard mission finished")
 
         else:
             self.flight_phase_     =	1
