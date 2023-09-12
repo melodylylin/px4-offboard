@@ -141,21 +141,6 @@ class OffboardMission(Node):
 
         self.nav_wpt_reach_rad_ =   np.float32(0.1)     # waypoint reach condition radius
 
-        self.true_cur_wpt_     =   np.array([0.0,0.0,0.0],dtype=np.float64)
-        self.atck_cur_wpt_     =   np.array([0.0,0.0,0.0],dtype=np.float64)
-
-        self.atck_engage_       =   False
-        self.atck_detect_       =   True
-
-        self.atck_act_states_   =   np.array([0.0,0.0,0.0],dtype=np.float64)
-        self.atck_est_states_   =   np.array([0.0,0.0,0.0],dtype=np.float64)
-
-        self.Lobv               =   np.array([[0.62,0.00,0.00],
-                                              [0.00,0.62,0.00],
-                                              [0.00,0.00,0.62]],dtype=np.float64)        # observer gain
-
-        self.detect_threshold   =   np.float64(0.90)         # detector threshold
-
         # variables for subscribers
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
 
@@ -243,12 +228,8 @@ class OffboardMission(Node):
 
                 self.entry_execute_  = 	0
                 self.cur_wpt_  = np.array([5.0,-6.0,-1.2],dtype=np.float64)
-                self.past_wpt_ = self.local_pos_ned_
-                self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
-                self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
-                self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
-                self.trajectory_setpoint_yaw  =   np.float64(-np.pi/2)
-                self.publish_trajectory_setpoint()
+                self.past_wpt_ = self.local_pos_ned_               
+                self.theta = np.float64(0.0)
 
             # during:
             print("Current Mode: Offboard (Position hold at a starting point)")
@@ -306,34 +287,18 @@ class OffboardMission(Node):
                                         np.power(self.cur_wpt_[1]-self.local_pos_ned_[1],2)+ \
                                         np.power(self.cur_wpt_[2]-self.local_pos_ned_[2],2))
 
-                if (self.wpt_idx_ <= 3) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                if (dist_xyz <= self.nav_wpt_reach_rad_):
+                    # Reset theta to 0 to start the new waypoint
+                    self.theta  = np.float64(0.0)
                     self.past_wpt_ = self.wpt_set_[self.wpt_idx_].flatten()
-                    self.wpt_idx_ = self.wpt_idx_+1
-                    self.cur_wpt_ = self.wpt_set_[self.wpt_idx_]
-
-                elif (self.wpt_idx_ == 4) and (dist_xyz <= self.nav_wpt_reach_rad_):
-                    # exit:
-                    print("Offboard mission finished")
-
-        else:
-            self.flight_phase_     =	1
-            self.entry_execute_    =	1
-
-            self.theta  = np.float64(0.0)
-            if (self.local_pos_ned_ is not None):
-                self.past_wpt_ = self.local_pos_ned_
-
-            else:
-                self.past = np.array([0.0,0.0,0.0],dtype=np.float64)
-
-            self.cur_wpt_ = np.array([0.0,0.0,-1.2],dtype=np.float64)
-
-            self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
-            self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
-            self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
-            self.trajectory_setpoint_yaw  =   np.float64(-np.pi/2)
-            self.publish_trajectory_setpoint()
-
+                    
+                    if (self.wpt_idx_ == self.wpt_set_.shape[0] - 1 ):
+                        # exit:
+                        print("Offboard mission finished")
+                    
+                    else:    
+                        self.wpt_idx_ = self.wpt_idx_+1
+                        self.cur_wpt_ = self.wpt_set_[self.wpt_idx_]
             
         stamp = self.get_clock().now().to_msg()
 
