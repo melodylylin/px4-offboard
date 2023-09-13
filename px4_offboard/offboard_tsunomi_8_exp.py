@@ -1,5 +1,3 @@
-
-        
 #!/usr/bin/env python
 
 __author__ = "Li-Yu Lin"
@@ -227,7 +225,7 @@ class OffboardMission(Node):
             if self.entry_execute_:
 
                 self.entry_execute_  = 	0
-                self.cur_wpt_  = np.array([2.0,0.0,-1.5],dtype=np.float64)
+                self.cur_wpt_  = self.wpt_set_[0]#np.array([4.0,-2.0,-1.2],dtype=np.float64)
                 self.past_wpt_ = self.local_pos_ned_
                 self.theta = np.float64(0.0)
 
@@ -286,20 +284,35 @@ class OffboardMission(Node):
                 dist_xyz    =   np.sqrt(np.power(self.cur_wpt_[0]-self.local_pos_ned_[0],2)+ \
                                         np.power(self.cur_wpt_[1]-self.local_pos_ned_[1],2)+ \
                                         np.power(self.cur_wpt_[2]-self.local_pos_ned_[2],2))
-
-                if (dist_xyz <= self.nav_wpt_reach_rad_):
-                    # Reset theta to 0 to start the new waypoint
-                    self.theta  = np.float64(0.0)
+                
+                if (self.wpt_idx_ <= self.wpt_set_.shape[0] - 1) and (dist_xyz <= self.nav_wpt_reach_rad_):
                     self.past_wpt_ = self.wpt_set_[self.wpt_idx_].flatten()
-                    
-                    if (self.wpt_idx_ == self.wpt_set_.shape[0] - 1 ):
-                        # exit:
-                        print("Offboard mission finished")
-                    
-                    else:    
-                        self.wpt_idx_ = self.wpt_idx_+1
-                        self.cur_wpt_ = self.wpt_set_[self.wpt_idx_]
+                    self.wpt_idx_ = self.wpt_idx_+1
+                    self.cur_wpt_ = self.wpt_set_[self.wpt_idx_]
+
+                elif (self.wpt_idx_ == self.wpt_set_.shape[0] ) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    # exit:
+                    print("Offboard mission finished")
             
+        else:
+            self.flight_phase_     =	1
+            self.entry_execute_    =	1
+
+            self.theta  = np.float64(0.0)
+            if (self.local_pos_ned_ is not None):
+                self.past_wpt_ = self.local_pos_ned_
+
+            else:
+                self.past = np.array([0.0,0.0,0.0],dtype=np.float64)
+
+            self.cur_wpt_ = self.wpt_set_[0] #np.array([0.0,0.0,-1.2],dtype=np.float64)
+
+            self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
+            self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
+            self.trajectory_setpoint_z = self.theta*self.cur_wpt_[2]+(1-self.theta)*self.past_wpt_[2]
+            self.trajectory_setpoint_yaw  =   np.float64(-np.pi/2)
+            self.publish_trajectory_setpoint()
+
         stamp = self.get_clock().now().to_msg()
 
         flight_phase_pub = UInt8()
