@@ -65,7 +65,7 @@ class MoCapStream(Node):
     	    R_ENU2NED = np.array([[2*sqrt(2)/2**2 - 1, 2*(sqrt(2)/2*sqrt(2)/2), 0],
         		  	  [0, 2*sqrt(2)/2**2 - 1, 0],
         		  	  [0, 0, -1]])
-	    q = R@np.array([qw,qx,qy,qz])
+	    q = R_ENU2NED@np.array([qw,qx,qy,qz])
 
             msg = VehicleOdometry()
             msg.timestamp = int(Clock().now().nanoseconds / 1000)
