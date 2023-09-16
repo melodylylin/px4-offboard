@@ -61,13 +61,18 @@ class MoCapStream(Node):
             qx = self.drone_pose.pose.orientation.x
             qy = self.drone_pose.pose.orientation.y
             qz = self.drone_pose.pose.orientation.z
+	
+    	    R_ENU2NED = np.array([[2*sqrt(2)/2**2 - 1, 2*(sqrt(2)/2*sqrt(2)/2), 0],
+        		  	  [0, 2*sqrt(2)/2**2 - 1, 0],
+        		  	  [0, 0, -1]])
+	    q = R@np.array([qw,qx,qy,qz])
 
             msg = VehicleOdometry()
             msg.timestamp = int(Clock().now().nanoseconds / 1000)
-            msg.position = np.array([x, -y, -z], dtype=np.float32)
+            msg.position = np.array([y, x, -z], dtype=np.float32)
             
             # q_flu = np.array([qw, qx, qy, qz], dtype=np.float32)
-            q_frd = np.array([qw, qx, -qy, -qz], dtype=np.float32)
+            q_frd = np.array([q[0], q[1], q[2], q[3]], dtype=np.float32)
             msg.q = q_frd
             # self.get_logger().info(f"Pos: {msg.position}")
             msg.pose_frame = VehicleOdometry.POSE_FRAME_FRD
