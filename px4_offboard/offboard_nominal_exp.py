@@ -243,8 +243,7 @@ class OffboardMission(Node):
                 self.entry_execute_  = 	0
                 self.cur_wpt_  = np.array([0.0,0.0,-1.2],dtype=np.float64)
                 self.past_wpt_ = self.local_pos_ned_
-                self.trajectory_setpoint_yaw  =   np.float64(-np.pi/2)
-                self.publish_trajectory_setpoint()
+                self.theta = np.float64(0.0)
 
             # during:
             print("Current Mode: Offboard (Position hold at a starting point)")
@@ -302,17 +301,14 @@ class OffboardMission(Node):
                                         np.power(self.cur_wpt_[1]-self.local_pos_ned_[1],2)+ \
                                         np.power(self.cur_wpt_[2]-self.local_pos_ned_[2],2))
 
-                if (dist_xyz <= self.nav_wpt_reach_rad_):
-                    # Reset theta to 0 to start the new waypoint
-                    self.theta  = np.float64(0.0)
+                if (self.wpt_idx_ <= self.wpt_set_.shape[0] - 1) and (dist_xyz <= self.nav_wpt_reach_rad_):
                     self.past_wpt_ = self.wpt_set_[self.wpt_idx_].flatten()
-                    
-                    if (self.wpt_idx_ == self.wpt_set_.shape[0] - 1 ):
-                        # exit:
-                        print("Offboard mission finished")
-                    else:    
-                        self.wpt_idx_ = self.wpt_idx_+1
-                        self.cur_wpt_ = self.wpt_set_[self.wpt_idx_]
+                    self.wpt_idx_ = self.wpt_idx_+1
+                    self.cur_wpt_ = self.wpt_set_[self.wpt_idx_]
+
+                elif (self.wpt_idx_ == self.wpt_set_.shape[0]) and (dist_xyz <= self.nav_wpt_reach_rad_):
+                    # exit:
+                    print("Offboard mission finished")
 
         else:
             self.flight_phase_     =	1
@@ -325,7 +321,7 @@ class OffboardMission(Node):
             else:
                 self.past = np.array([0.0,0.0,0.0],dtype=np.float64)
 
-            self.cur_wpt_ = np.array([0.0,0.0,-1.2],dtype=np.float64)
+            self.cur_wpt_ = self.wpt_set_[0]#np.array([0.0,0.0,-1.2],dtype=np.float64)
 
             self.trajectory_setpoint_x = self.theta*self.cur_wpt_[0]+(1-self.theta)*self.past_wpt_[0]
             self.trajectory_setpoint_y = self.theta*self.cur_wpt_[1]+(1-self.theta)*self.past_wpt_[1]
